@@ -42,7 +42,7 @@ import {
 	redirectWithQueryBuilderData,
 } from './testUtils';
 
-const currentTestUrl =
+let currentTestUrl =
 	'/traces-explorer/?panelType=list&selectedExplorerView=list';
 
 jest.mock('react-router-dom-v5-compat', () => ({
@@ -112,12 +112,13 @@ window.ResizeObserver =
 	}));
 
 const successNotification = jest.fn();
+const errorNotification = jest.fn();
 jest.mock('hooks/useNotifications', () => ({
 	__esModule: true,
 	useNotifications: jest.fn(() => ({
 		notifications: {
 			success: successNotification,
-			error: jest.fn(),
+			error: errorNotification,
 		},
 	})),
 }));
@@ -142,9 +143,10 @@ jest.mock('react-redux', () => ({
 	}),
 }));
 
+const safeNavigateMock = jest.fn();
 jest.mock('hooks/useSafeNavigate', () => ({
 	useSafeNavigate: (): any => ({
-		safeNavigate: jest.fn(),
+		safeNavigate: safeNavigateMock,
 	}),
 }));
 
@@ -519,6 +521,10 @@ describe('TracesExplorer - ', () => {
 	};
 
 	beforeEach(() => {
+		currentTestUrl =
+			'/traces-explorer/?panelType=list&selectedExplorerView=list';
+		safeNavigateMock.mockReset();
+		errorNotification.mockReset();
 		setupServer();
 	});
 
@@ -782,6 +788,51 @@ describe('TracesExplorer - ', () => {
 
 		expect(historyPush).toHaveBeenCalledWith(
 			expect.stringContaining(`${ROUTES.ALERTS_NEW}`),
+		);
+	});
+
+	it('trace id quick search should open trace detail for valid trace id', async () => {
+		renderWithTracesExplorerRouter(<TracesExplorer />, [
+			'/traces-explorer/?panelType=list&selectedExplorerView=list',
+		]);
+
+		const traceId = '5765b60ba7cc4ddafe8bdaa9c1b4b246';
+
+		fireEvent.change(screen.getByPlaceholderText('Open trace by Trace ID'), {
+			target: { value: traceId },
+		});
+		fireEvent.click(screen.getByRole('button', { name: 'Open Trace' }));
+
+		expect(safeNavigateMock).toHaveBeenCalledWith(`/trace/${traceId}`);
+		expect(errorNotification).not.toHaveBeenCalled();
+	});
+
+	it('trace id quick search should reject invalid trace id', async () => {
+		renderWithTracesExplorerRouter(<TracesExplorer />, [
+			'/traces-explorer/?panelType=list&selectedExplorerView=list',
+		]);
+
+		fireEvent.change(screen.getByPlaceholderText('Open trace by Trace ID'), {
+			target: { value: 'bad-trace-id' },
+		});
+		fireEvent.click(screen.getByRole('button', { name: 'Open Trace' }));
+
+		expect(safeNavigateMock).not.toHaveBeenCalled();
+		expect(errorNotification).toHaveBeenCalledWith({
+			message: 'Trace ID must be a 16-32 character hexadecimal value.',
+		});
+	});
+
+	it('trace explorer deep link should auto-open trace detail when traceId query param exists', async () => {
+		currentTestUrl =
+			'/traces-explorer/?panelType=list&selectedExplorerView=list&traceId=5765b60ba7cc4ddafe8bdaa9c1b4b246';
+
+		renderWithTracesExplorerRouter(<TracesExplorer />, [currentTestUrl]);
+
+		await waitFor(() =>
+			expect(safeNavigateMock).toHaveBeenCalledWith(
+				'/trace/5765b60ba7cc4ddafe8bdaa9c1b4b246',
+			),
 		);
 	});
 });

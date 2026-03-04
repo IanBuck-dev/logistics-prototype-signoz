@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom-v5-compat';
 import * as Sentry from '@sentry/react';
-import { Card } from 'antd';
+import { Card, Input } from 'antd';
 import logEvent from 'api/common/logEvent';
 import cx from 'classnames';
 import ExplorerCard from 'components/ExplorerCard/ExplorerCard';
 import QuickFilters from 'components/QuickFilters/QuickFilters';
 import { QuickFiltersSource, SignalType } from 'components/QuickFilters/types';
 import WarningPopover from 'components/WarningPopover/WarningPopover';
+import ROUTES from 'constants/routes';
 import { LOCALSTORAGE } from 'constants/localStorage';
 import { AVAILABLE_EXPORT_PANEL_TYPES } from 'constants/panelTypes';
 import { initialQueriesMap, PANEL_TYPES } from 'constants/queryBuilder';
@@ -32,6 +33,7 @@ import {
 	ICurrentQueryData,
 	useHandleExplorerTabChange,
 } from 'hooks/useHandleExplorerTabChange';
+import { useNotifications } from 'hooks/useNotifications';
 import { useSafeNavigate } from 'hooks/useSafeNavigate';
 import { isEmpty } from 'lodash-es';
 import ErrorBoundaryFallback from 'pages/ErrorBoundaryFallback/ErrorBoundaryFallback';
@@ -51,6 +53,9 @@ import { v4 } from 'uuid';
 import TimeSeriesView from './TimeSeriesView';
 
 import './TracesExplorer.styles.scss';
+
+const TRACE_ID_PATTERN = /^[a-f0-9]{16,32}$/i;
+const { Search } = Input;
 
 function TracesExplorer(): JSX.Element {
 	const {
@@ -96,6 +101,9 @@ function TracesExplorer(): JSX.Element {
 
 	const { handleExplorerTabChange } = useHandleExplorerTabChange();
 	const { safeNavigate } = useSafeNavigate();
+	const { notifications } = useNotifications();
+	const [quickTraceId, setQuickTraceId] = useState<string>('');
+	const deepLinkHandledRef = useRef(false);
 
 	const handleChangeSelectedView = useCallback(
 		(view: ExplorerViews, querySearchParameters?: ICurrentQueryData): void => {
@@ -167,6 +175,46 @@ function TracesExplorer(): JSX.Element {
 		}
 	}, []);
 
+	const handleOpenTraceById = useCallback(
+		(rawTraceId: string): void => {
+			const traceId = rawTraceId.trim();
+
+			if (!traceId) {
+				notifications.error({
+					message: 'Enter a trace ID before opening trace details.',
+				});
+				return;
+			}
+
+			if (!TRACE_ID_PATTERN.test(traceId)) {
+				notifications.error({
+					message:
+						'Trace ID must be a 16-32 character hexadecimal value.',
+				});
+				return;
+			}
+
+			safeNavigate(`${ROUTES.TRACE}/${traceId}`);
+		},
+		[notifications, safeNavigate],
+	);
+
+	useEffect(() => {
+		const deepLinkTraceId = searchParams.get('traceId')?.trim();
+
+		if (
+			deepLinkHandledRef.current ||
+			!deepLinkTraceId ||
+			!TRACE_ID_PATTERN.test(deepLinkTraceId)
+		) {
+			return;
+		}
+
+		deepLinkHandledRef.current = true;
+		setQuickTraceId(deepLinkTraceId);
+		safeNavigate(`${ROUTES.TRACE}/${deepLinkTraceId}`);
+	}, [safeNavigate, searchParams]);
+
 	const isFilterApplied = useMemo(() => {
 		// if any of the non-disabled queries has filters applied, return true
 		const result = stagedQuery?.builder?.queryData?.filter(
@@ -216,6 +264,17 @@ function TracesExplorer(): JSX.Element {
 								/>
 							}
 						/>
+						<div className="trace-explorer-traceid-search">
+							<Search
+								data-testid="trace-id-quick-search"
+								allowClear
+								enterButton="Open Trace"
+								placeholder="Open trace by Trace ID"
+								value={quickTraceId}
+								onChange={(event): void => setQuickTraceId(event.target.value)}
+								onSearch={handleOpenTraceById}
+							/>
+						</div>
 					</div>
 					<ExplorerCard sourcepage={DataSource.TRACES}>
 						<div className="query-section-container">
