@@ -123,7 +123,8 @@ export default defineConfig(
 			build: {
 				sourcemap: true,
 				outDir: 'build',
-				cssMinify: 'esbuild',
+				minify: false,
+				cssMinify: false,
 			},
 			server: {
 				open: true,
